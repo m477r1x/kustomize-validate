@@ -17,7 +17,7 @@ jobs:
           exit 1
 
       - name: Run actions on changed directories
-        id: kustomize-check
+        id: kustomize-validate
         run: |
           for path in ${{ steps.filter_paths.outputs.paths }}; do
             if [ -d "$path" ]; then
@@ -34,7 +34,7 @@ jobs:
               files=$(find . -maxdepth 1 -type f -printf '%f\n' | grep -v "kustomization.yaml")
               resources=($(awk '/resources:/{flag=1; next} /^\S/{flag=0} flag && /^  -/{print $2}' ./kustomization.yaml))
               for file in $files; do
-                if grep -q "#!kustomize-check ignore" "$file"; then
+                if grep -q "#!kustomize-validate ignore" "$file"; then
                   continue
                 fi
                 if ! printf '%s\n' "${resources[@]}" | grep -qFx "$file"; then
@@ -56,7 +56,7 @@ jobs:
               files=$(find . -maxdepth 1 -type f -printf '%f\n' | grep -v "kustomization.yaml")
               resources=($(awk '/resources:/{flag=1; next} /^\S/{flag=0} flag && /^  -/{print $2}' ./kustomization.yaml))
               for file in $files; do
-                if grep -q "#!kustomize-check ignore" "$file"; then
+                if grep -q "#!kustomize-validate ignore" "$file"; then
                   continue
                 fi
                 if ! printf '%s\n' "${resources[@]}" | grep -qFx "$file"; then
