@@ -1,0 +1,69 @@
+on:
+  pull_request:
+
+jobs:
+  kustomization-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Filter changed paths
+        id: filter_paths
+        run: |
+          git remote update -p
+          echo "::set-output name=paths::$(git diff --name-only origin/${GITHUB_BASE_REF}..origin/${GITHUB_HEAD_REF})" || \
+          exit 1
+
+      - name: Run actions on changed directories
+        id: kustomize-check
+        run: |
+          for path in ${{ steps.filter_paths.outputs.paths }}; do
+            if [ -d "$path" ]; then
+              cd "$path"
+            
+              # check if kustomization.yaml file exists in the directory
+              if [[ ! -f "kustomization.yaml" ]]; then
+                echo "::warning file=kustomization.yaml::Warning: kustomization.yaml file is missing from this directory. Your manifests will not be applied by flux."
+                exit 1
+              fi
+          
+              # check if all items in the directory exist in the kustomization.yaml file
+          
+              files=$(find . -maxdepth 1 -type f -printf '%f\n' | grep -v "kustomization.yaml")
+              resources=($(awk '/resources:/{flag=1; next} /^\S/{flag=0} flag && /^  -/{print $2}' ./kustomization.yaml))
+              for file in $files; do
+                if grep -q "#!kustomize-check ignore" "$file"; then
+                  continue
+                fi
+                if ! printf '%s\n' "${resources[@]}" | grep -qFx "$file"; then
+                  echo "::warning file=$file::Warning: File '$file' is not listed in kustomization.yaml, flux will ignore this file."
+                  exit 1
+                fi
+              done
+          
+              cd - || exit 1
+            else
+              # check if kustomization.yaml file exists in the directory
+              if [[ ! -f "kustomization.yaml" ]]; then
+                echo "::warning file=kustomization.yaml::Warning: kustomization.yaml file is missing from this directory. Your manifests will not be applied by flux."
+                exit 1
+              fi
+          
+              # check if all items in the directory exist in the kustomization.yaml file
+          
+              files=$(find . -maxdepth 1 -type f -printf '%f\n' | grep -v "kustomization.yaml")
+              resources=($(awk '/resources:/{flag=1; next} /^\S/{flag=0} flag && /^  -/{print $2}' ./kustomization.yaml))
+              for file in $files; do
+                if grep -q "#!kustomize-check ignore" "$file"; then
+                  continue
+                fi
+                if ! printf '%s\n' "${resources[@]}" | grep -qFx "$file"; then
+                  echo "::warning file=$file::Warning: File '$file' is not listed in kustomization.yaml, flux will ignore this file."
+                  exit 1
+                fi
+              done
+            fi
+          done
+
