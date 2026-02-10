@@ -22,6 +22,26 @@ runs:
         FAILED=0
         ERROR_LOG=$(mktemp)
 
+        # First, check for directories with YAML files but no kustomization.yaml
+        echo "Checking for missing kustomization.yaml files..."
+        checked_dirs=()
+        while IFS= read -r yaml_file; do
+          dir=$(dirname "$yaml_file")
+          
+          # Skip if we've already checked this directory
+          if [[ " ${checked_dirs[@]} " =~ " ${dir} " ]]; then
+            continue
+          fi
+          checked_dirs+=("$dir")
+          
+          if [ ! -f "$dir/kustomization.yaml" ]; then
+            echo "❌ Error: Directory $dir contains YAML files but is missing kustomization.yaml" | tee -a "$ERROR_LOG"
+            FAILED=1
+          fi
+        done < <(find . -type f \( -name "*.yaml" -o -name "*.yml" \) ! -name "kustomization.yaml" ! -path "*/.*")
+
+        # Then validate all existing kustomization.yaml files
+        echo "Validating kustomization.yaml files..."
         while read kustfile; do
           dir=$(dirname "$kustfile")
           DIR_FAILED=0
