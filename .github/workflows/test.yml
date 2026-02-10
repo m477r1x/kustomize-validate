@@ -1,0 +1,16 @@
+name: Example - Kustomize Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-kustomization:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Kustomization Files
+        uses: ./
