@@ -1,30 +1,71 @@
-name: 'Kustomize Check'
-description: 'Check if kustomization.yaml exists and contains all items in the directory'
-inputs:
-  directory:
-    description: 'Directory to check'
-    required: true
+name: 'Kustomize Validate'
+description: 'Validates that all kustomization.yaml files correctly reference actual files in their directories'
+author: 'Matt Love'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
 runs:
   using: 'composite'
   steps:
-    - name: Check kustomization.yaml
+    - name: Install yq
       shell: bash
       run: |
-        if [ ! -f "${{ inputs.directory }}/kustomization.yaml" ]; then
-          echo "kustomization.yaml not found in ${{ inputs.directory }}"
-          exit 1
-        fi
+        wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+        chmod +x /usr/local/bin/yq
 
-        items=$(ls -1 "${{ inputs.directory }}" | grep -v "kustomization.yaml")
-        missing_items=""
+    - name: Validate Kustomization Files
+      shell: bash
+      run: |
+        #!/bin/bash
+        set -e
+        FAILED=0
+        ERROR_LOG=$(mktemp)
 
-        for item in $items; do
-          if ! grep -q "$item" "${{ inputs.directory }}/kustomization.yaml"; then
-            missing_items+="$item "
+        while read kustfile; do
+          dir=$(dirname "$kustfile")
+          DIR_FAILED=0
+
+          # Get declared resources
+          declared_resources=$(yq e '.resources[]' "$kustfile" 2>/dev/null || echo "")
+
+          # Check if each actual file is in kustomization.yaml
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            
+            # Skip files marked with #!kustomize-validate ignore
+            if grep -q "#!kustomize-validate ignore" "$dir/$file" 2>/dev/null; then
+              echo "⏭️🙈 Ignoring $file (marked with #!kustomize-validate ignore)"
+              continue
+            fi
+            
+            if ! echo "$declared_resources" | grep -Fxq "$file"; then
+              echo "❌ Error: $file not listed in $kustfile" | tee -a "$ERROR_LOG"
+              DIR_FAILED=1
+              FAILED=1
+            fi
+          done < <(find "$dir" -maxdepth 1 -type f ! -name "kustomization.yaml" ! -name ".*" -exec basename {} \;)
+
+          # Check if declared resources actually exist
+          while IFS= read -r resource; do
+            [ -z "$resource" ] && continue
+            resource_path="$dir/$resource"
+            if [ ! -e "$resource_path" ]; then
+              echo "❌ Error: declared resource '$resource' not found in $dir" | tee -a "$ERROR_LOG"
+              DIR_FAILED=1
+              FAILED=1
+            fi
+          done < <(echo "$declared_resources")
+
+          # Print status for this directory
+          if [ $DIR_FAILED -eq 0 ]; then
+            echo "✅ $dir/kustomization.yaml validated successfully"
           fi
-        done
+        done < <(find . -type f -name "kustomization.yaml")
 
-        if [ -n "$missing_items" ]; then
-          echo "The following items are missing from kustomization.yaml in ${{ inputs.directory }}: $missing_items"
+        rm -f "$ERROR_LOG"
+
+        if [ $FAILED -eq 1 ]; then
           exit 1
         fi
+        echo "✅ All kustomization files validated successfully"
